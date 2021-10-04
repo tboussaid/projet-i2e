@@ -5,7 +5,7 @@ import pandas as pd
 import json
 
 # returns JSON object as a dictionary
-f = open('train.json',)
+f = open('data/train.json',)
 
 # creating a dataframe
 df = pd.DataFrame(json.load(f))
