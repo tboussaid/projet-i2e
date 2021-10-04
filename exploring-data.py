@@ -4,8 +4,12 @@
 import pandas as pd
 import json
 
+# Import Google Drive
+from google.colab import drive
+drive.mount('/content/drive')
+
 # returns JSON object as a dictionary
-f = open('data/train.json',)
+f = open('/content/drive/MyDrive/Iceberg/train.json',) # The train.json file needs to be in an "Icerberg" directory
 
 # creating a dataframe
 df = pd.DataFrame(json.load(f))
