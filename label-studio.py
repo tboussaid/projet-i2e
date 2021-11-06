@@ -3,6 +3,7 @@ import json
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
+from app import to_RGB
 
 
 # returns JSON object as a dictionary
@@ -13,12 +14,6 @@ df_raw = pd.DataFrame(json.load(f))
 
 # visualising the first rows
 print(df_raw.head())
-
-def to_RGB(arr):
-    normalized = (arr-np.min(arr))/(np.max(arr)-np.min(arr))
-    im = Image.fromarray(plt.cm.jet(normalized, bytes=True))
-    im = im.resize((300, 300), Image.ANTIALIAS)
-    return (im)
 
 for i in range(df_raw.shape[0]) :
     #f, (im1, im2) = plt.subplots(1, 2)

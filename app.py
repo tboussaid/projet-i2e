@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import numpy as np
 import seaborn as sns
+from PIL import Image
 import plotly.express as px
 import matplotlib.pyplot as plt
 import plotly.express as px
@@ -19,6 +20,7 @@ from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_sc
 from sklearn.metrics import precision_recall_curve
 
 from scipy.optimize import fmin, minimize_scalar
+import scipy.stats
 
 def show_bands(row):
   print(f'Index : {row.name}')
@@ -230,3 +232,34 @@ def get_pca_df(df, X, pcs):
   res = res.join(df['is_iceberg'])
   res = res.dropna()
   return res
+
+def to_RGB(matx):
+  normalized = (matx-np.min(matx))/(np.max(matx)-np.min(matx))
+  img = Image.fromarray(plt.cm.jet(normalized, bytes=True))
+  img = img.resize((300, 300), Image.ANTIALIAS)
+  return (img)
+
+def get_distrib(matx, dist_name = "norm"):
+
+  ## visual part of the function
+  fig = plt.figure(figsize=(12,10))
+  # showing the original image
+  img = to_RGB(matx)
+  ax = fig.add_subplot(1,2,1)
+  ax.imshow(img)
+  # getting the elements as a 1D array
+  distrib = matx.ravel()
+  ax = fig.add_subplot(1,2,2)
+  ax.hist(distrib, bins = 200, color ='blue')
+  ax.set_xlabel("dB")
+  ax.set_ylabel("Frequence")
+  plt.show()
+
+  ## getting the normal distribution coefficients
+  # getting the law parameters
+  dist = getattr(scipy.stats, dist_name)
+
+  # fitting the law to the data
+  param = dist.fit(distrib)
+  mean, var, skew, kurt = dist.stats(moments='mvsk')
+  return mean, var, skew, kurt
