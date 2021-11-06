@@ -34,13 +34,14 @@ def show_bands(row):
   plt.show()
 
 class EvaluateAndReport:
-  def __init__(self, df, X_train, X_test, y_train, y_test, scoring = 'f1', grid_cv = 5, cv_cv = 10):
+  def __init__(self, df, X_train, X_test, y_train, y_test, scoring = 'f1', grid_cv = 5, cv_cv = 10, best_scores_t = {}):
     self.df = df
     self.X_train, self.y_train, self.X_test, self.y_test = X_train, y_train, X_test, y_test
     self.scoring = scoring
     self.grid_cv = grid_cv
     self.cv_cv = cv_cv
     #self.threshold = threshold
+    self.best_scores_t = best_scores_t
 
 
   def grid_report(self, classifier = None, param_grid = None):
@@ -63,7 +64,8 @@ class EvaluateAndReport:
       classifier = self.last_best
     print('--- Cross Validation Report ---')
     scorings = ('accuracy', 'f1', 'precision', 'recall')
-    scores = cross_validate(classifier, X_train, y_train, cv = self.cv_cv, scoring = scorings)
+    scores = cross_validate(classifier, self.X_train, self.y_train, cv = self.cv_cv, scoring = scorings)
+    self.best_scores_t = {scoring : round(np.mean(scores["test_"+scoring]),3) for scoring in scorings}
     [print(f'Mean {scoring} score {round(np.mean(scores["test_"+scoring]),3)} with std {round(np.std(scores["test_"+scoring]),3)}') for scoring in scorings]
 
 
