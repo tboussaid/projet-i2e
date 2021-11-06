@@ -18,6 +18,8 @@ from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 from sklearn.metrics import precision_recall_curve
 
+from scipy.optimize import fmin, minimize_scalar
+
 def show_bands(row):
   print(f'Index : {row.name}')
   f, (img1, img2) = plt.subplots(1, 2, figsize = (10,10))
@@ -32,13 +34,13 @@ def show_bands(row):
   plt.show()
 
 class EvaluateAndReport:
-  def __init__(self, df, X_train, X_test, y_train, y_test, scoring = 'f1', grid_cv = 5, cv_cv = 10, threshold = 0.5):
+  def __init__(self, df, X_train, X_test, y_train, y_test, scoring = 'f1', grid_cv = 5, cv_cv = 10):
     self.df = df
     self.X_train, self.y_train, self.X_test, self.y_test = X_train, y_train, X_test, y_test
     self.scoring = scoring
     self.grid_cv = grid_cv
     self.cv_cv = cv_cv
-    self.threshold = threshold
+    #self.threshold = threshold
 
 
   def grid_report(self, classifier = None, param_grid = None):
@@ -105,12 +107,51 @@ class EvaluateAndReport:
     print(f'--- Cross Validation with {threshold} Threshold Report ---')
     y_train_scores = cross_val_predict(self.last_best, self.X_train, self.y_train, cv=self.cv_cv, method='predict_proba')
     y_train_scores = np.array([y[1] for y in y_train_scores])
-    y_pred = (y_train_scores >= threshold)
+    self.print_proba_scores(self.calc_proba_scores(y_train_scores, threshold))
 
-    print(f' accuracy : {round(accuracy_score(self.y_train, y_pred),3)}')
-    print(f' f1 : {round(f1_score(self.y_train, y_pred),3)}')
-    print(f' precision : {round(precision_score(self.y_train, y_pred),3)}')
-    print(f' recall : {round(recall_score(self.y_train, y_pred),3)}')
+  def calc_proba_scores(self, y_train_scores, threshold):
+    y_pred = (y_train_scores >= threshold)
+    return (accuracy_score(self.y_train, y_pred), f1_score(self.y_train, y_pred, zero_division=0), precision_score(self.y_train, y_pred, zero_division=0), recall_score(self.y_train, y_pred, zero_division=0))
+
+  def print_proba_scores(self, scores):
+    print(f' accuracy : {round(scores[0],3)}')
+    print(f' f1 : {round(scores[1],3)}')
+    print(f' precision : {round(scores[2],3)}')
+    print(f' recall : {round(scores[3],3)}')
+
+  def full_cross_proba_report(self, classifier = None, res = 50):
+    if classifier is None:
+      classifier = self.last_best
+    print(f'--- Threshold Report ---')
+    y_train_scores = cross_val_predict(self.last_best, self.X_train, self.y_train, cv=self.cv_cv, method='predict_proba')
+    y_train_scores = np.array([y[1] for y in y_train_scores])
+    probas = np.linspace(0.0,1.0,res)
+    full_scores = np.array([self.calc_proba_scores(y_train_scores, threshold) for threshold in probas])
+
+    plt.figure(figsize=(8,6))
+    plt.plot(probas, full_scores[:,0], "b-", label="Accuracy", linewidth=2)
+    plt.plot(probas, full_scores[:,1], "g-", label="F1", linewidth=2)
+    plt.plot(probas, full_scores[:,2], "r-", label="Precision", linewidth=2)
+    plt.plot(probas, full_scores[:,3], "c-", label="Recall", linewidth=2)
+    plt.xlabel("Probablility threshold", fontsize=16)
+    plt.ylabel("Score", fontsize=16)
+    plt.legend(loc="best", fontsize=16)
+    plt.ylim([0.4, 1])
+    plt.xlim([0, 1])
+    plt.grid(b=True, linestyle='-')
+
+    #Searching for optimals
+    acc_opt = minimize_scalar(lambda x : -self.calc_proba_scores(y_train_scores, x)[0], bracket=(0.0,1.0))
+    if acc_opt.x < 0: acc_opt.x = 0.0
+    elif acc_opt.x > 1 : acc_opt.x = 1.0
+    print(f'Optimal threshold for accuracy is {round(acc_opt.x,2)} with:')
+    self.print_proba_scores(self.calc_proba_scores(y_train_scores, acc_opt.x))
+
+    acc_opt = minimize_scalar(lambda x : -self.calc_proba_scores(y_train_scores, x)[1], bracket=(0.0,1.0))
+    if acc_opt.x < 0: acc_opt.x = 0.0
+    elif acc_opt.x > 1 : acc_opt.x = 1.0
+    print(f'Optimal threshold for f1 is {round(acc_opt.x,2)} with:')
+    self.print_proba_scores(self.calc_proba_scores(y_train_scores, acc_opt.x))
 
   def plot_precision_recall(self, classifier = None):
     if classifier is None:
