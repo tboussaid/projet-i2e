@@ -180,7 +180,7 @@ class EvaluateAndReport:
   def plot_mistakes(self, nb_samples = 1, nature = None, random_state = None):
     #Plots bands for wrongly predicted individuals
     #By default, false positives and false negatives are shown. If one is chosen in 'nature', the other ones won't be shown
-    df_res = df.join(pd.DataFrame(data=self.last_y_pred, index=self.y_test.index, columns=['is_iceberg_pred']))
+    df_res = self.df.join(pd.DataFrame(data=self.last_y_pred, index=self.y_test.index, columns=['is_iceberg_pred']))
     
     if nature != 'boat_as_iceberg':
       print('--- Icebergs predicted as boats ---')
@@ -192,7 +192,7 @@ class EvaluateAndReport:
   def plot_predicted(self, nb_samples = 1, nature = None, random_state = None):
     #Plots bands for correclty predicted individuals
     #By default, correctly predicted icebergs and boats are shown. If one is chosen in 'nature', the others ones won't be shown
-    df_res = df.join(pd.DataFrame(data=self.last_y_pred, index=self.y_test.index, columns=['is_iceberg_pred']))
+    df_res = self.df.join(pd.DataFrame(data=self.last_y_pred, index=self.y_test.index, columns=['is_iceberg_pred']))
     
     if nature != 'boats':
       print('--- Icebergs predicted correctly ---')
@@ -221,3 +221,12 @@ def plot_features(data, name):
   plt.xlabel(name)
   plt.ylabel('Frequency')
   plt.show()
+
+# Applying a PCA a returning a df with the specified number of principle components
+def get_pca_df(df, X, pcs):
+  X_std = StandardScaler().fit_transform(X)
+  pca = PCA(pcs).fit(X_std)
+  res = pd.DataFrame(pca.transform(X_std),columns=['PC%s' % _ for _ in range(pcs)], index=df.index)
+  res = res.join(df['is_iceberg'])
+  res = res.dropna()
+  return res
