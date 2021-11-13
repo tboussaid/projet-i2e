@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import numpy as np
 import seaborn as sns
+from PIL import Image
 import plotly.express as px
 import matplotlib.pyplot as plt
 import plotly.express as px
@@ -19,6 +20,7 @@ from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_sc
 from sklearn.metrics import precision_recall_curve
 
 from scipy.optimize import fmin, minimize_scalar
+from scipy import stats
 
 def show_bands(row):
   print(f'Index : {row.name}')
@@ -180,7 +182,7 @@ class EvaluateAndReport:
   def plot_mistakes(self, nb_samples = 1, nature = None, random_state = None):
     #Plots bands for wrongly predicted individuals
     #By default, false positives and false negatives are shown. If one is chosen in 'nature', the other ones won't be shown
-    df_res = df.join(pd.DataFrame(data=self.last_y_pred, index=self.y_test.index, columns=['is_iceberg_pred']))
+    df_res = self.df.join(pd.DataFrame(data=self.last_y_pred, index=self.y_test.index, columns=['is_iceberg_pred']))
     
     if nature != 'boat_as_iceberg':
       print('--- Icebergs predicted as boats ---')
@@ -192,7 +194,7 @@ class EvaluateAndReport:
   def plot_predicted(self, nb_samples = 1, nature = None, random_state = None):
     #Plots bands for correclty predicted individuals
     #By default, correctly predicted icebergs and boats are shown. If one is chosen in 'nature', the others ones won't be shown
-    df_res = df.join(pd.DataFrame(data=self.last_y_pred, index=self.y_test.index, columns=['is_iceberg_pred']))
+    df_res = self.df.join(pd.DataFrame(data=self.last_y_pred, index=self.y_test.index, columns=['is_iceberg_pred']))
     
     if nature != 'boats':
       print('--- Icebergs predicted correctly ---')
@@ -221,3 +223,35 @@ def plot_features(data, name):
   plt.xlabel(name)
   plt.ylabel('Frequency')
   plt.show()
+
+# Applying a PCA a returning a df with the specified number of principle components
+def get_pca_df(df, X, pcs):
+  X_std = StandardScaler().fit_transform(X)
+  pca = PCA(pcs).fit(X_std)
+  res = pd.DataFrame(pca.transform(X_std),columns=['PC%s' % _ for _ in range(pcs)], index=df.index)
+  res = res.join(df['is_iceberg'])
+  res = res.dropna()
+  return res
+
+def to_RGB(matx):
+  normalized = (matx-np.min(matx))/(np.max(matx)-np.min(matx))
+  img = Image.fromarray(plt.cm.jet(normalized, bytes=True))
+  img = img.resize((300, 300), Image.ANTIALIAS)
+  return (img)
+
+def get_distrib(matx, display = True):
+  data = matx.ravel()
+  if display : 
+    ## visual part of the function
+    fig = plt.figure(figsize=(14,10))
+    # showing the original image
+    img = to_RGB(matx)
+    ax = fig.add_subplot(1,2,1)
+    ax.imshow(img)
+    # getting the elements as a 1D array
+    ax = fig.add_subplot(1,2,2)
+    ax.hist(data, bins = 200, color ='blue')
+    ax.set_xlabel("dB")
+    ax.set_ylabel("Frequence")
+    plt.show()
+  return stats.describe(data)
