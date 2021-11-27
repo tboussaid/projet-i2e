@@ -2,6 +2,7 @@
 import pandas as pd
 import json
 import numpy as np
+from scipy.stats.stats import mode
 import seaborn as sns
 from PIL import Image
 import plotly.express as px
@@ -14,13 +15,29 @@ from sklearn.preprocessing import scale, normalize, StandardScaler
 from sklearn.model_selection import train_test_split, cross_val_score, cross_validate, cross_val_predict, GridSearchCV 
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import mean_absolute_error
-
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import classification_report
 
+
+# Statistic libraries
 from scipy.optimize import fmin, minimize_scalar
 from scipy import stats
+
+# Importing Keras library from Tensorflow
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.layers.experimental import preprocessing
+from tensorflow.keras.callbacks import EarlyStopping
+from keras.layers.merge import Concatenate
+from keras.callbacks import ModelCheckpoint
+from tensorflow.keras.applications.resnet50 import ResNet50
+from tensorflow.keras.models import Model
+from tensorflow.python.keras.layers.core import Dense
+from tensorflow.python.keras.layers.pooling import GlobalAveragePooling2D
+
 
 def show_bands(row):
   print(f'Index : {row.name}')
@@ -240,6 +257,7 @@ def to_RGB(matx):
   return (img)
 
 def get_distrib(matx, display = True):
+   # getting the elements as a 1D array
   data = matx.ravel()
   if display : 
     ## visual part of the function
@@ -248,10 +266,131 @@ def get_distrib(matx, display = True):
     img = to_RGB(matx)
     ax = fig.add_subplot(1,2,1)
     ax.imshow(img)
-    # getting the elements as a 1D array
     ax = fig.add_subplot(1,2,2)
     ax.hist(data, bins = 200, color ='blue')
     ax.set_xlabel("dB")
     ax.set_ylabel("Frequence")
     plt.show()
   return stats.describe(data)
+
+class DeepLearningExplore:
+
+  def __init__(self, df, X_train, X_test, y_train, y_test, best_model_, best_scores_t = {}):
+    self.df = df
+    self.X_train, self.y_train, self.X_test, self.y_test = X_train, y_train, X_test, y_test
+    self.best_scores_t = best_scores_t
+    self.best_model = best_model_
+
+  def create_model(self, n_cv2D, n_dense, drop_cv2D=True, normalization =True, act_fun='relu', disp=True):
+    # Creating the minimum blocks needed and introducing data augmentation
+    model = keras.Sequential([
+      # Pretraitement, 'data augmentation'
+    preprocessing.RandomFlip('horizontal'), # flip gauche-à-droite
+    preprocessing.RandomFlip('vertical'), # flip haut-en-bas
+
+    ########################
+    ## CONVOLUTIONAL BASE ##
+    ########################
+
+    # Premier block avec conv2D et MaxPooling
+    layers.Conv2D(filters=32, kernel_size=5, activation=act_fun, padding='valid', input_shape=[75, 75, 2]),
+    layers.MaxPool2D(),
+    ])
+
+    # Ajout des blocks de convolution 2D
+    for i in range(n_cv2D):
+      model.add(
+        layers.Conv2D(filters=32*(i+1), kernel_size=3, activation=act_fun, padding='valid'),
+        layers.MaxPool2D(),
+        layers.Dropout(0.2*drop_cv2D/(i+1)),
+      )
+
+    # Ajout d'un flatten layer pour passer en couches denses
+    model.add(layers.Flatten())
+
+    ########################
+    ##    DENSE HEAD      ##
+    ########################
+    for j in range(n_dense):
+      model.add(
+        layers.Dense(n_cv2D*32/(j+2), activation=act_fun)
+      )
+    if normalization:
+      model.add(layers.BatchNormalization())
+
+    # Ajout d'un couche sigmoid pour la classification
+    model.add(layers.Dense(1, activation="sigmoid"))
+
+    # Ajout d'un optimiseur
+    model.compile(
+    optimizer=tf.keras.optimizers.Adam(epsilon=0.01),
+    loss='binary_crossentropy',
+    metrics=['binary_accuracy']
+    )
+
+    # Affichage de la structure du réseau ainsi construit
+    if disp:
+      tf.keras.utils.plot_model(model)
+      print(model.summary())
+    self.best_model = model
+
+    return model
+    
+  def get_best_trained(self, model, n_epoch, verbose = True):
+    checkpointer = ModelCheckpoint(
+      filepath="best_weights.hdf5", 
+      monitor = 'val_accuracy',
+      verbose=1, 
+      save_best_only=True
+    )
+    history = model.fit(
+      self.X_train,
+      self.y_train,
+      validation_data=(self.X_test, self.y_test),
+      batch_size = 25,
+      epochs = n_epoch,
+      callbacks=[checkpointer],
+    )
+    self.best_model = model.load_weights('best_weights.hdf5')
+
+    if verbose:
+      history_df = pd.DataFrame(history.history)
+      history_df.loc[0:, ['loss', 'val_loss']].plot()
+      print(("Minimum Validation Loss: {:0.4f}").format(history_df['val_loss'].min()))
+      history_df.loc[:, ['binary_accuracy', 'val_binary_accuracy']].plot()
+      print(("Maximum Validation Accuracy: {:0.4f}").format(history_df['val_binary_accuracy'].max()))
+      
+
+  def get_other_metrics(self):
+    # getting the f1, recall and precision metrics
+    y_pred = self.best_model.predict(self.X_test, batch_size=25, verbose =0)
+    y_pred_bool = np.argmax(y_pred, axis=1)
+    print(classification_report(self.y_test, y_pred_bool))
+
+    return classification_report(self.y_test, y_pred_bool)
+  
+  def transferred_learning():
+    base_model = ResNet50(include_top=False, weights="imagenet", input_shape=(75, 75, 2))
+
+    # Adding top layers for classification
+    out = base_model.output
+    out = GlobalAveragePooling2D()(out)
+    out = Dense(1024, activation='relu')(out)
+    predictions = Dense(1, activation='sigmoid')(out)
+
+    # Constructing our "fined" model
+    fined_model = Model(inputs=base_model.input, outputs=predictions)
+
+    # first: train only the top layers (which were randomly initialized)
+    # i.e. freeze all convolutional ResNet50 layers
+    for layer in base_model.layers:
+      layer.trainable = False
+  
+    # compile the model (should be done *after* setting layers to non-trainable)
+    fined_model.compile(
+      optimizer=tf.keras.optimizers.Adam(epsilon=0.01),
+      loss='binary_crossentropy',
+      metrics=['binary_accuracy']
+    )
+
+    return fined_model
