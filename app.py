@@ -278,7 +278,7 @@ def get_distrib(matx, display = True):
 
 class DeepLearningExplore:
 
-  def __init__(self, df, X_train, X_test, y_train, y_test, best_model_, compiled_model, best_scores_t = {}):
+  def __init__(self, df, X_train, X_test, y_train, y_test, best_model_=None, compiled_model=None, best_scores_t = {}):
     self.df = df
     self.X_train, self.y_train, self.X_test, self.y_test = X_train, y_train, X_test, y_test
     self.best_scores_t = best_scores_t
@@ -286,27 +286,40 @@ class DeepLearningExplore:
     self.compiled_model = compiled_model
 
   def create_model(self, n_cv2D, n_dense, drop_cv2D=True, normalization =True, act_fun='relu', disp=True):
+    model = keras.Sequential()
+    input_shape_=(75, 75, 2)
     # Creating the minimum blocks needed and introducing data augmentation
-    model = keras.Sequential([
-      # Pretraitement, 'data augmentation'
-    preprocessing.RandomFlip('horizontal'), # flip gauche-à-droite
-    preprocessing.RandomFlip('vertical'), # flip haut-en-bas
-
+    # Pretraitement, 'data augmentation'
+    model.add(
+      preprocessing.RandomFlip('horizontal') # flip gauche-à-droite
+    ) 
+    
+    model.add(
+      preprocessing.RandomFlip('vertical') # flip haut-en-bas
+    )
+    
     ########################
     ## CONVOLUTIONAL BASE ##
     ########################
 
     # Premier block avec conv2D et MaxPooling
-    layers.Conv2D(filters=32, kernel_size=5, activation=act_fun, padding='valid', input_shape=[75, 75, 2]),
-    layers.MaxPool2D(),
-    ])
+    model.add(
+      layers.Conv2D(filters=32, kernel_size=5, activation=act_fun, padding='valid')
+    )
+    model.add(
+      layers.MaxPool2D()
+    )
 
     # Ajout des blocks de convolution 2D
-    for i in range(n_cv2D):
+    for i in range(n_cv2D+1):
       model.add(
-        layers.Conv2D(filters=32*(i+1), kernel_size=3, activation=act_fun, padding='valid'),
-        layers.MaxPool2D(),
-        layers.Dropout(0.2*drop_cv2D/(i+1)),
+        layers.Conv2D(filters=32*(i+1), kernel_size=3, activation=act_fun, padding='valid')
+      )
+      model.add(
+        layers.MaxPool2D()
+      )
+      model.add(
+         layers.Dropout(0.2*drop_cv2D/(i+1))
       )
 
     # Ajout d'un flatten layer pour passer en couches denses
@@ -315,7 +328,7 @@ class DeepLearningExplore:
     ########################
     ##    DENSE HEAD      ##
     ########################
-    for j in range(n_dense):
+    for j in range(n_dense+1):
       model.add(
         layers.Dense(n_cv2D*32/(j+2), activation=act_fun)
       )
@@ -323,7 +336,7 @@ class DeepLearningExplore:
       model.add(layers.BatchNormalization())
 
     # Ajout d'un couche sigmoid pour la classification
-    model.add(layers.Dense(1, activation="sigmoid"))
+    model.add(layers.Dense(2, activation="softmax"))
 
     # Ajout d'un optimiseur
     model.compile(
@@ -331,6 +344,9 @@ class DeepLearningExplore:
     loss='binary_crossentropy',
     metrics=['binary_accuracy']
     )
+
+    model.build(input_shape_)
+    
     self.compiled_model = model
 
     # Affichage de la structure du réseau ainsi construit
