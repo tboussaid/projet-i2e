@@ -37,6 +37,9 @@ from tensorflow.keras.applications.resnet50 import ResNet50
 from tensorflow.keras.models import Model
 from tensorflow.python.keras.layers.core import Dense
 from tensorflow.python.keras.layers.pooling import GlobalAveragePooling2D
+from keras.models import load_model
+from os import makedirs
+
 
 
 def show_bands(row):
@@ -275,11 +278,12 @@ def get_distrib(matx, display = True):
 
 class DeepLearningExplore:
 
-  def __init__(self, df, X_train, X_test, y_train, y_test, best_model_, best_scores_t = {}):
+  def __init__(self, df, X_train, X_test, y_train, y_test, best_model_, compiled_model, best_scores_t = {}):
     self.df = df
     self.X_train, self.y_train, self.X_test, self.y_test = X_train, y_train, X_test, y_test
     self.best_scores_t = best_scores_t
     self.best_model = best_model_
+    self.compiled_model = compiled_model
 
   def create_model(self, n_cv2D, n_dense, drop_cv2D=True, normalization =True, act_fun='relu', disp=True):
     # Creating the minimum blocks needed and introducing data augmentation
@@ -327,6 +331,7 @@ class DeepLearningExplore:
     loss='binary_crossentropy',
     metrics=['binary_accuracy']
     )
+    self.compiled_model = model
 
     # Affichage de la structure du réseau ainsi construit
     if disp:
@@ -361,9 +366,11 @@ class DeepLearningExplore:
       print(("Maximum Validation Accuracy: {:0.4f}").format(history_df['val_binary_accuracy'].max()))
       
 
-  def get_other_metrics(self):
+  def get_other_metrics(self, model=None):
+    if model is None:
+      model = self.best_model
     # getting the f1, recall and precision metrics
-    y_pred = self.best_model.predict(self.X_test, batch_size=25, verbose =0)
+    y_pred = model.predict(self.X_test, batch_size=25, verbose =0)
     y_pred_bool = np.argmax(y_pred, axis=1)
     print(classification_report(self.y_test, y_pred_bool))
 
@@ -376,7 +383,9 @@ class DeepLearningExplore:
     out = base_model.output
     out = GlobalAveragePooling2D()(out)
     out = Dense(1024, activation='relu')(out)
-    predictions = Dense(1, activation='sigmoid')(out)
+
+    # Using softmax activation for having the same predict_proba returns as sklearn methods
+    predictions = Dense(2, activation='softmax')(out)
 
     # Constructing our "fined" model
     fined_model = Model(inputs=base_model.input, outputs=predictions)
@@ -394,3 +403,63 @@ class DeepLearningExplore:
     )
 
     return fined_model
+
+  # load models from file
+  def load_all_models(n_start, n_end):
+    all_models = list()
+    for epoch in range(n_start, n_end):
+      # define filename for this ensemble
+      filename = 'models/model_' + str(epoch) + '.h5'
+      # load model from file
+      model = load_model(filename)
+      # add to list of members
+      all_models.append(model)
+      print('>>>>>>> loaded %s' % filename)
+    return all_models
+  
+  # make an ensemble prediction for multi-class classification
+  def ensemble_predictions(self, members):
+    # make predictions
+    yhats = [model.predict(self.X_test) for model in members]
+    yhats = np.array(yhats)
+    # sum across ensemble members
+    summed = np.sum(yhats, axis=0)
+    # argmax across classes
+    result = np.argmax(summed, axis=1)
+    return result
+
+  def evaluate_n_members(self, members, n_members):
+    # select a subset of members
+    subset = members[:n_members]
+    # make prediction
+    yhat = self.ensemble_predictions(subset, self.X_test)
+    # calculate accuracy
+    return accuracy_score(self.y_test, yhat)
+
+  def horizontal_voting(self, n_epoch, n_save_after):
+    makedirs('models')
+    for i in range(n_epoch):
+      #fit the model for a single epoch
+      self.compiled_model.fit(self.X_train, self.y_train, epochs=1, verbose=0)
+      #check if we should save the model
+      if i >= n_save_after:
+        self.compiled_model.save('models/model_' + str(i) + '.h5')
+    members = list(reversed(self.load_all_models(n_save_after, n_epoch)))
+    # evaluate different numbers of ensembles on hold out set
+    single_scores, ensemble_scores = list(), list()
+    for i in range(1, len(members)+1):
+      # evaluate model with i members
+      ensemble_score = self.evaluate_n_members(self, members, i)
+      # evaluate the i'th model standalone
+      _, single_score = members[i-1].evaluate(self.X_test, self.y_test, verbose=0)
+      # summarize this step
+      print('> %d: single=%.3f, ensemble=%.3f' % (i, single_score, ensemble_score))
+      ensemble_scores.append(ensemble_score)
+      single_scores.append(single_score)
+    # summarize average accuracy of a single final model
+    print('Accuracy %.3f (%.3f)' % (np.mean(single_scores), np.std(single_scores)))
+    # plot score vs number of ensemble members
+    x_axis = [i for i in range(1, len(members)+1)]
+    plt.plot(x_axis, single_scores, marker='o', linestyle='None')
+    plt.plot(x_axis, ensemble_scores, marker='o')
+    plt.show()
