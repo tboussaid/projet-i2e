@@ -1,4 +1,5 @@
 # Import useful libraries
+from random import randint
 import pandas as pd
 import json
 import numpy as np
@@ -28,6 +29,7 @@ from scipy import stats
 # Importing Keras library from Tensorflow
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.keras.models import Sequential
 from tensorflow.keras import layers
 from tensorflow.keras.layers.experimental import preprocessing
 from tensorflow.keras.callbacks import EarlyStopping
@@ -278,16 +280,17 @@ def get_distrib(matx, display = True):
 
 class DeepLearningExplore:
 
-  def __init__(self, df, X_train, X_test, y_train, y_test, best_model_=None, compiled_model=None, best_scores_t = {}):
+  def __init__(self, df, X_train, X_test, y_train, y_test, batch_s, best_model_=None, compiled_model=None, best_scores_t = {}):
     self.df = df
     self.X_train, self.y_train, self.X_test, self.y_test = X_train, y_train, X_test, y_test
     self.best_scores_t = best_scores_t
+    self.batch_s = batch_s
     self.best_model = best_model_
     self.compiled_model = compiled_model
 
-  def create_model(self, n_cv2D, n_dense, drop_cv2D=True, normalization =True, act_fun='relu', disp=True):
-    model = keras.Sequential()
-    input_shape_=(75, 75, 2)
+  def create_model(self, n_cv2D, n_dense, drop_cv2D=True, normalization =True, act_fun='relu'):
+    model = Sequential()
+    input_shape_ = [75, 75, 2]
     # Creating the minimum blocks needed and introducing data augmentation
     # Pretraitement, 'data augmentation'
     model.add(
@@ -301,19 +304,19 @@ class DeepLearningExplore:
     ########################
     ## CONVOLUTIONAL BASE ##
     ########################
-
+    
     # Premier block avec conv2D et MaxPooling
     model.add(
-      layers.Conv2D(filters=32, kernel_size=5, activation=act_fun, padding='valid')
+      layers.Conv2D(filters=32, kernel_size=5, activation=act_fun, input_shape = input_shape_, padding='same')
     )
     model.add(
       layers.MaxPool2D()
     )
 
     # Ajout des blocks de convolution 2D
-    for i in range(n_cv2D+1):
+    for i in range(n_cv2D):
       model.add(
-        layers.Conv2D(filters=32*(i+1), kernel_size=3, activation=act_fun, padding='valid')
+        layers.Conv2D(filters=32*(i+2), kernel_size=3, activation=act_fun, padding='same')
       )
       model.add(
         layers.MaxPool2D()
@@ -330,13 +333,13 @@ class DeepLearningExplore:
     ########################
     for j in range(n_dense+1):
       model.add(
-        layers.Dense(n_cv2D*32/(j+2), activation=act_fun)
+        layers.Dense((n_dense+1-j)*32, activation=act_fun)
       )
-    if normalization:
-      model.add(layers.BatchNormalization())
+      if normalization:
+        model.add(layers.BatchNormalization())
 
     # Ajout d'un couche sigmoid pour la classification
-    model.add(layers.Dense(2, activation="softmax"))
+    model.add(layers.Dense(1, activation="sigmoid"))
 
     # Ajout d'un optimiseur
     model.compile(
@@ -345,22 +348,19 @@ class DeepLearningExplore:
     metrics=['binary_accuracy']
     )
 
-    model.build(input_shape_)
+    # model.build(input_shape_)
     
     self.compiled_model = model
 
-    # Affichage de la structure du réseau ainsi construit
-    if disp:
-      tf.keras.utils.plot_model(model)
-      print(model.summary())
     self.best_model = model
 
     return model
     
   def get_best_trained(self, model, n_epoch, verbose = True):
+    i = randint(1,n_epoch)
     checkpointer = ModelCheckpoint(
-      filepath="best_weights.hdf5", 
-      monitor = 'val_accuracy',
+      filepath="best_weights_"+str(i)+"_.hdf5", 
+      monitor = 'val_binary_accuracy',
       verbose=1, 
       save_best_only=True
     )
@@ -368,11 +368,11 @@ class DeepLearningExplore:
       self.X_train,
       self.y_train,
       validation_data=(self.X_test, self.y_test),
-      batch_size = 25,
+      batch_size = self.batch_s,
       epochs = n_epoch,
       callbacks=[checkpointer],
     )
-    self.best_model = model.load_weights('best_weights.hdf5')
+    self.best_model = model.load_weights("best_weights_"+str(i)+"_.hdf5")
 
     if verbose:
       history_df = pd.DataFrame(history.history)
@@ -386,7 +386,7 @@ class DeepLearningExplore:
     if model is None:
       model = self.best_model
     # getting the f1, recall and precision metrics
-    y_pred = model.predict(self.X_test, batch_size=25, verbose =0)
+    y_pred = model.predict(self.X_test, batch_size=self.batch_s, verbose =0)
     y_pred_bool = np.argmax(y_pred, axis=1)
     print(classification_report(self.y_test, y_pred_bool))
 
@@ -421,7 +421,7 @@ class DeepLearningExplore:
     return fined_model
 
   # load models from file
-  def load_all_models(n_start, n_end):
+  def load_all_models(self, n_start, n_end):
     all_models = list()
     for epoch in range(n_start, n_end):
       # define filename for this ensemble
@@ -433,13 +433,14 @@ class DeepLearningExplore:
       print('>>>>>>> loaded %s' % filename)
     return all_models
   
-  # make an ensemble prediction for multi-class classification
+  # make an ensemble prediction for a binary classification
   def ensemble_predictions(self, members):
     # make predictions
     yhats = [model.predict(self.X_test) for model in members]
     yhats = np.array(yhats)
     # sum across ensemble members
     summed = np.sum(yhats, axis=0)
+    #print('summed ', summed)
     # argmax across classes
     result = np.argmax(summed, axis=1)
     return result
@@ -448,7 +449,7 @@ class DeepLearningExplore:
     # select a subset of members
     subset = members[:n_members]
     # make prediction
-    yhat = self.ensemble_predictions(subset, self.X_test)
+    yhat = self.ensemble_predictions(subset)
     # calculate accuracy
     return accuracy_score(self.y_test, yhat)
 
@@ -457,15 +458,17 @@ class DeepLearningExplore:
     for i in range(n_epoch):
       #fit the model for a single epoch
       self.compiled_model.fit(self.X_train, self.y_train, epochs=1, verbose=0)
+      print('>>>>>>>>>>> fit no : '+str(i)+' done')
       #check if we should save the model
       if i >= n_save_after:
         self.compiled_model.save('models/model_' + str(i) + '.h5')
-    members = list(reversed(self.load_all_models(n_save_after, n_epoch)))
+        print('>>>>>>>>>>>>>>>>>>>> save done')
+    members = list(reversed(self.load_all_models(n_start = n_save_after, n_end = n_epoch)))
     # evaluate different numbers of ensembles on hold out set
     single_scores, ensemble_scores = list(), list()
     for i in range(1, len(members)+1):
       # evaluate model with i members
-      ensemble_score = self.evaluate_n_members(self, members, i)
+      ensemble_score = self.evaluate_n_members(members, i)
       # evaluate the i'th model standalone
       _, single_score = members[i-1].evaluate(self.X_test, self.y_test, verbose=0)
       # summarize this step
