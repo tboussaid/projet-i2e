@@ -1,5 +1,4 @@
 # Import useful libraries
-from random import randint
 import pandas as pd
 import json
 import numpy as np
@@ -333,7 +332,7 @@ class DeepLearningExplore:
     ########################
     for j in range(n_dense+1):
       model.add(
-        layers.Dense((n_dense+1-j)*32, activation=act_fun)
+        layers.Dense((n_dense+2-j)*32, activation=act_fun)
       )
       if normalization:
         model.add(layers.BatchNormalization())
@@ -347,23 +346,20 @@ class DeepLearningExplore:
     loss='binary_crossentropy',
     metrics=['binary_accuracy']
     )
-
-    # model.build(input_shape_)
     
     self.compiled_model = model
-
     self.best_model = model
 
     return model
     
-  def get_best_trained(self, model, n_epoch, verbose = True):
-    i = randint(1,n_epoch)
+  def get_best_trained(self, model, n_epoch, name="cv", verbose = True):
     checkpointer = ModelCheckpoint(
-      filepath="best_weights_"+str(i)+"_.hdf5", 
+      filepath="best_weights_"+name+"_.hdf5", 
       monitor = 'val_binary_accuracy',
       verbose=1, 
       save_best_only=True
     )
+    #self.y_train = tf.keras.utils.to_categorical(self.y_train, num_classes=2)
     history = model.fit(
       self.X_train,
       self.y_train,
@@ -372,7 +368,7 @@ class DeepLearningExplore:
       epochs = n_epoch,
       callbacks=[checkpointer],
     )
-    self.best_model = model.load_weights("best_weights_"+str(i)+"_.hdf5")
+    self.best_model = model.load_weights("best_weights_"+name+"_.hdf5")
 
     if verbose:
       history_df = pd.DataFrame(history.history)
@@ -392,24 +388,21 @@ class DeepLearningExplore:
 
     return classification_report(self.y_test, y_pred_bool)
   
-  def transferred_learning():
-    base_model = ResNet50(include_top=False, weights="imagenet", input_shape=(75, 75, 2))
+  def transferred_learning(self):
+    fined_model = Sequential()
 
-    # Adding top layers for classification
-    out = base_model.output
-    out = GlobalAveragePooling2D()(out)
-    out = Dense(1024, activation='relu')(out)
-
-    # Using softmax activation for having the same predict_proba returns as sklearn methods
-    predictions = Dense(2, activation='softmax')(out)
-
-    # Constructing our "fined" model
-    fined_model = Model(inputs=base_model.input, outputs=predictions)
-
+    base_model = ResNet50(include_top=False, weights="imagenet", input_shape=(75, 75, 3))
     # first: train only the top layers (which were randomly initialized)
     # i.e. freeze all convolutional ResNet50 layers
     for layer in base_model.layers:
       layer.trainable = False
+    
+    # Adding top layers for classification
+    fined_model.add(base_model)
+    fined_model.add(layers.Flatten())
+    fined_model.add(Dense(1024, activation='relu'))
+    # Ajout d'un couche sigmoid pour la classification
+    fined_model.add(layers.Dense(1, activation="sigmoid"))
   
     # compile the model (should be done *after* setting layers to non-trainable)
     fined_model.compile(
@@ -442,7 +435,7 @@ class DeepLearningExplore:
     summed = np.sum(yhats, axis=0)
     #print('summed ', summed)
     # argmax across classes
-    result = np.argmax(summed, axis=1)
+    result = ((summed > 0.6)+0).ravel()
     return result
 
   def evaluate_n_members(self, members, n_members):
