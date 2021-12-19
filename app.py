@@ -370,7 +370,7 @@ class DeepLearningExplore:
     if verbose:
       fig, ax = plt.subplots()
       history_df = pd.DataFrame(history.history)
-      history_df.loc[0:, ['loss', 'val_loss']].plot(x='Epochs', y='Logloss', ax=ax)
+      history_df.loc[0:, ['loss', 'val_loss']].plot(ax=ax)
       # Don't allow the axis to be on top of your data
       ax.set_axisbelow(True)
       # Turn on the minor TICKS, which are required for the minor GRID
@@ -383,7 +383,7 @@ class DeepLearningExplore:
       print(("Minimum Validation Loss: {:0.4f}").format(history_df['val_loss'].min()))
 
       fig1, ax1 = plt.subplots()
-      history_df.loc[:, ['binary_accuracy', 'val_binary_accuracy']].plot(x='Epochs', y='Accuracy', ax=ax1)
+      history_df.loc[:, ['binary_accuracy', 'val_binary_accuracy']].plot(ax=ax1)
       ax1.set_axisbelow(True)
       ax1.minorticks_on()
       ax1.grid(which='major', linestyle='-', linewidth='0.5', color='red')
@@ -458,7 +458,6 @@ class DeepLearningExplore:
     averaged = np.mean(yhats, axis=0)
     # argmax across classes
     result = ((averaged>threshold)+0).ravel()
-    print("Results : ", result)
     return result
 
   def evaluate_n_members(self, members, n_members, threshold):
@@ -466,6 +465,15 @@ class DeepLearningExplore:
     subset = members[:n_members]
     # make prediction
     yhat = self.ensemble_predictions(subset, threshold)
+    # precision tp / (tp + fp)
+    precision = precision_score(self.y_test, yhat)
+    print('Precision ensemble: %f' % precision)
+    # recall: tp / (tp + fn)
+    recall = recall_score(self.y_test, yhat)
+    print('Recall ensemble : %f' % recall)
+    # f1: 2 tp / (2 tp + fp + fn)
+    f1 = f1_score(self.y_test, yhat)
+    print('F1 score ensemble: %f' % f1)
     # calculate accuracy
     return accuracy_score(self.y_test, yhat)
 
