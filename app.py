@@ -2,12 +2,9 @@
 import pandas as pd
 import json
 import numpy as np
-from scipy.stats.stats import mode
-import seaborn as sns
 from PIL import Image
 import plotly.express as px
 import matplotlib.pyplot as plt
-import plotly.express as px
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import scale, normalize, StandardScaler
 
@@ -371,22 +368,48 @@ class DeepLearningExplore:
     self.best_model = model.load_weights("best_weights_"+name+"_.hdf5")
 
     if verbose:
+      fig, ax = plt.subplots()
       history_df = pd.DataFrame(history.history)
-      history_df.loc[0:, ['loss', 'val_loss']].plot()
+      history_df.loc[0:, ['loss', 'val_loss']].plot(x='Epochs', y='Logloss', ax=ax)
+      # Don't allow the axis to be on top of your data
+      ax.set_axisbelow(True)
+      # Turn on the minor TICKS, which are required for the minor GRID
+      ax.minorticks_on()
+      # Customize the major grid
+      ax.grid(which='major', linestyle='-', linewidth='0.5', color='red')
+      # Customize the minor grid
+      ax.grid(which='minor', linestyle=':', linewidth='0.5', color='black')
+      ax.legend(["Train loss", "Validation loss"])
       print(("Minimum Validation Loss: {:0.4f}").format(history_df['val_loss'].min()))
-      history_df.loc[:, ['binary_accuracy', 'val_binary_accuracy']].plot()
+
+      fig1, ax1 = plt.subplots()
+      history_df.loc[:, ['binary_accuracy', 'val_binary_accuracy']].plot(x='Epochs', y='Accuracy', ax=ax1)
+      ax1.set_axisbelow(True)
+      ax1.minorticks_on()
+      ax1.grid(which='major', linestyle='-', linewidth='0.5', color='red')
+      ax1.grid(which='minor', linestyle=':', linewidth='0.5', color='black')
+      ax1.legend(["Train accuracy", "Validation accuracy"])
       print(("Maximum Validation Accuracy: {:0.4f}").format(history_df['val_binary_accuracy'].max()))
       
 
-  def get_other_metrics(self, model=None):
+  def get_other_metrics(self, model=None, threshold =0.5):
     if model is None:
       model = self.best_model
+    
     # getting the f1, recall and precision metrics
-    y_pred = model.predict(self.X_test, batch_size=self.batch_s, verbose =0)
-    y_pred_bool = np.argmax(y_pred, axis=1)
-    print(classification_report(self.y_test, y_pred_bool))
+    y_pred1 = model.predict(self.X_test, batch_size=self.batch_s, verbose =0)
+    y_pred=((y_pred1 > threshold)+0).ravel()
+    # precision tp / (tp + fp)
+    precision = precision_score(self.y_test, y_pred)
+    print('Precision: %f' % precision)
+    # recall: tp / (tp + fn)
+    recall = recall_score(self.y_test, y_pred)
+    print('Recall: %f' % recall)
+    # f1: 2 tp / (2 tp + fp + fn)
+    f1 = f1_score(self.y_test, y_pred)
+    print('F1 score: %f' % f1)
 
-    return classification_report(self.y_test, y_pred_bool)
+    return [precision, recall, f1]
   
   def transferred_learning(self):
     fined_model = Sequential()
@@ -427,26 +450,26 @@ class DeepLearningExplore:
     return all_models
   
   # make an ensemble prediction for a binary classification
-  def ensemble_predictions(self, members):
+  def ensemble_predictions(self, members, threshold):
     # make predictions
-    yhats = [model.predict(self.X_test) for model in members]
+    yhats = [model.predict(self.X_test, verbose = 0) for model in members]
     yhats = np.array(yhats)
-    # sum across ensemble members
-    summed = np.sum(yhats, axis=0)
-    #print('summed ', summed)
+    # averaging across ensemble members
+    averaged = np.mean(yhats, axis=0)
     # argmax across classes
-    result = ((summed > 0.6)+0).ravel()
+    result = ((averaged>threshold)+0).ravel()
+    print("Results : ", result)
     return result
 
-  def evaluate_n_members(self, members, n_members):
+  def evaluate_n_members(self, members, n_members, threshold):
     # select a subset of members
     subset = members[:n_members]
     # make prediction
-    yhat = self.ensemble_predictions(subset)
+    yhat = self.ensemble_predictions(subset, threshold)
     # calculate accuracy
     return accuracy_score(self.y_test, yhat)
 
-  def horizontal_voting(self, n_epoch, n_save_after):
+  def horizontal_voting(self, n_epoch, n_save_after,threshold =0.5):
     makedirs('models')
     for i in range(n_epoch):
       #fit the model for a single epoch
@@ -461,7 +484,7 @@ class DeepLearningExplore:
     single_scores, ensemble_scores = list(), list()
     for i in range(1, len(members)+1):
       # evaluate model with i members
-      ensemble_score = self.evaluate_n_members(members, i)
+      ensemble_score = self.evaluate_n_members(members, i, threshold)
       # evaluate the i'th model standalone
       _, single_score = members[i-1].evaluate(self.X_test, self.y_test, verbose=0)
       # summarize this step
@@ -474,4 +497,6 @@ class DeepLearningExplore:
     x_axis = [i for i in range(1, len(members)+1)]
     plt.plot(x_axis, single_scores, marker='o', linestyle='None')
     plt.plot(x_axis, ensemble_scores, marker='o')
+    plt.grid()
+    plt.legend(["Single scores", "Horizontal score"])
     plt.show()
