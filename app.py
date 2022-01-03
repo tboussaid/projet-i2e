@@ -2,11 +2,9 @@
 import pandas as pd
 import json
 import numpy as np
-import seaborn as sns
 from PIL import Image
 import plotly.express as px
 import matplotlib.pyplot as plt
-import plotly.express as px
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import scale, normalize, StandardScaler
 
@@ -14,13 +12,33 @@ from sklearn.preprocessing import scale, normalize, StandardScaler
 from sklearn.model_selection import train_test_split, cross_val_score, cross_validate, cross_val_predict, GridSearchCV 
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import mean_absolute_error
-
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import classification_report
 
+
+# Statistic libraries
 from scipy.optimize import fmin, minimize_scalar
 from scipy import stats
+
+# Importing Keras library from Tensorflow
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.models import Sequential
+from tensorflow.keras import layers
+from tensorflow.keras.layers.experimental import preprocessing
+from tensorflow.keras.callbacks import EarlyStopping
+from keras.layers.merge import Concatenate
+from keras.callbacks import ModelCheckpoint
+from tensorflow.keras.applications.resnet50 import ResNet50
+from tensorflow.keras.models import Model
+from tensorflow.python.keras.layers.core import Dense
+from tensorflow.python.keras.layers.pooling import GlobalAveragePooling2D
+from keras.models import load_model
+from os import makedirs
+
+
 
 def show_bands(row):
   print(f'Index : {row.name}')
@@ -240,6 +258,7 @@ def to_RGB(matx):
   return (img)
 
 def get_distrib(matx, display = True):
+   # getting the elements as a 1D array
   data = matx.ravel()
   if display : 
     ## visual part of the function
@@ -248,10 +267,244 @@ def get_distrib(matx, display = True):
     img = to_RGB(matx)
     ax = fig.add_subplot(1,2,1)
     ax.imshow(img)
-    # getting the elements as a 1D array
     ax = fig.add_subplot(1,2,2)
     ax.hist(data, bins = 200, color ='blue')
     ax.set_xlabel("dB")
     ax.set_ylabel("Frequence")
     plt.show()
   return stats.describe(data)
+
+class DeepLearningExplore:
+
+  def __init__(self, df, X_train, X_test, y_train, y_test, batch_s, best_model_=None, compiled_model=None, best_scores_t = {}):
+    self.df = df
+    self.X_train, self.y_train, self.X_test, self.y_test = X_train, y_train, X_test, y_test
+    self.best_scores_t = best_scores_t
+    self.batch_s = batch_s
+    self.best_model = best_model_
+    self.compiled_model = compiled_model
+
+  def create_model(self, n_cv2D, n_dense, drop_cv2D=True, normalization =True, act_fun='relu'):
+    model = Sequential()
+    input_shape_ = [75, 75, 2]
+    # Creating the minimum blocks needed and introducing data augmentation
+    # Pretraitement, 'data augmentation'
+    model.add(
+      preprocessing.RandomFlip('horizontal') # flip gauche-à-droite
+    ) 
+    
+    model.add(
+      preprocessing.RandomFlip('vertical') # flip haut-en-bas
+    )
+    
+    ########################
+    ## CONVOLUTIONAL BASE ##
+    ########################
+    
+    # Premier block avec conv2D et MaxPooling
+    model.add(
+      layers.Conv2D(filters=32, kernel_size=5, activation=act_fun, input_shape = input_shape_, padding='same')
+    )
+    model.add(
+      layers.MaxPool2D()
+    )
+
+    # Ajout des blocks de convolution 2D
+    for i in range(n_cv2D):
+      model.add(
+        layers.Conv2D(filters=32*(i+2), kernel_size=3, activation=act_fun, padding='same')
+      )
+      model.add(
+        layers.MaxPool2D()
+      )
+      model.add(
+         layers.Dropout(0.2*drop_cv2D/(i+1))
+      )
+
+    # Ajout d'un flatten layer pour passer en couches denses
+    model.add(layers.Flatten())
+
+    ########################
+    ##    DENSE HEAD      ##
+    ########################
+    for j in range(n_dense+1):
+      model.add(
+        layers.Dense((n_dense+2-j)*32, activation=act_fun)
+      )
+      if normalization:
+        model.add(layers.BatchNormalization())
+
+    # Ajout d'un couche sigmoid pour la classification
+    model.add(layers.Dense(1, activation="sigmoid"))
+
+    # Ajout d'un optimiseur
+    model.compile(
+    optimizer=tf.keras.optimizers.Adam(epsilon=0.01),
+    loss='binary_crossentropy',
+    metrics=['binary_accuracy']
+    )
+    
+    self.compiled_model = model
+    self.best_model = model
+
+    return model
+    
+  def get_best_trained(self, model, n_epoch, name="cv", verbose = True):
+    checkpointer = ModelCheckpoint(
+      filepath="best_weights_"+name+"_.hdf5", 
+      monitor = 'val_binary_accuracy',
+      verbose=1, 
+      save_best_only=True
+    )
+    #self.y_train = tf.keras.utils.to_categorical(self.y_train, num_classes=2)
+    history = model.fit(
+      self.X_train,
+      self.y_train,
+      validation_data=(self.X_test, self.y_test),
+      batch_size = self.batch_s,
+      epochs = n_epoch,
+      callbacks=[checkpointer],
+    )
+    self.best_model = model.load_weights("best_weights_"+name+"_.hdf5")
+
+    if verbose:
+      fig, ax = plt.subplots()
+      history_df = pd.DataFrame(history.history)
+      history_df.loc[0:, ['loss', 'val_loss']].plot(ax=ax)
+      # Don't allow the axis to be on top of your data
+      ax.set_axisbelow(True)
+      # Turn on the minor TICKS, which are required for the minor GRID
+      ax.minorticks_on()
+      # Customize the major grid
+      ax.grid(which='major', linestyle='-', linewidth='0.5', color='red')
+      # Customize the minor grid
+      ax.grid(which='minor', linestyle=':', linewidth='0.5', color='black')
+      ax.legend(["Train loss", "Validation loss"])
+      print(("Minimum Validation Loss: {:0.4f}").format(history_df['val_loss'].min()))
+
+      fig1, ax1 = plt.subplots()
+      history_df.loc[:, ['binary_accuracy', 'val_binary_accuracy']].plot(ax=ax1)
+      ax1.set_axisbelow(True)
+      ax1.minorticks_on()
+      ax1.grid(which='major', linestyle='-', linewidth='0.5', color='red')
+      ax1.grid(which='minor', linestyle=':', linewidth='0.5', color='black')
+      ax1.legend(["Train accuracy", "Validation accuracy"])
+      print(("Maximum Validation Accuracy: {:0.4f}").format(history_df['val_binary_accuracy'].max()))
+      
+
+  def get_other_metrics(self, model=None, threshold =0.5):
+    if model is None:
+      model = self.best_model
+    
+    # getting the f1, recall and precision metrics
+    y_pred1 = model.predict(self.X_test, batch_size=self.batch_s, verbose =0)
+    y_pred=((y_pred1 > threshold)+0).ravel()
+    # precision tp / (tp + fp)
+    precision = precision_score(self.y_test, y_pred)
+    print('Precision: %f' % precision)
+    # recall: tp / (tp + fn)
+    recall = recall_score(self.y_test, y_pred)
+    print('Recall: %f' % recall)
+    # f1: 2 tp / (2 tp + fp + fn)
+    f1 = f1_score(self.y_test, y_pred)
+    print('F1 score: %f' % f1)
+
+    return [precision, recall, f1]
+  
+  def transferred_learning(self):
+    fined_model = Sequential()
+
+    base_model = ResNet50(include_top=False, weights="imagenet", input_shape=(75, 75, 3))
+    # first: train only the top layers (which were randomly initialized)
+    # i.e. freeze all convolutional ResNet50 layers
+    for layer in base_model.layers:
+      layer.trainable = False
+    
+    # Adding top layers for classification
+    fined_model.add(base_model)
+    fined_model.add(layers.Flatten())
+    fined_model.add(Dense(1024, activation='relu'))
+    # Ajout d'un couche sigmoid pour la classification
+    fined_model.add(layers.Dense(1, activation="sigmoid"))
+  
+    # compile the model (should be done *after* setting layers to non-trainable)
+    fined_model.compile(
+      optimizer=tf.keras.optimizers.Adam(epsilon=0.01),
+      loss='binary_crossentropy',
+      metrics=['binary_accuracy']
+    )
+
+    return fined_model
+
+  # load models from file
+  def load_all_models(self, n_start, n_end):
+    all_models = list()
+    for epoch in range(n_start, n_end):
+      # define filename for this ensemble
+      filename = 'models/model_' + str(epoch) + '.h5'
+      # load model from file
+      model = load_model(filename)
+      # add to list of members
+      all_models.append(model)
+      print('>>>>>>> loaded %s' % filename)
+    return all_models
+  
+  # make an ensemble prediction for a binary classification
+  def ensemble_predictions(self, members, threshold):
+    # make predictions
+    yhats = [model.predict(self.X_test, verbose = 0) for model in members]
+    yhats = np.array(yhats)
+    # averaging across ensemble members
+    averaged = np.mean(yhats, axis=0)
+    # argmax across classes
+    result = ((averaged>threshold)+0).ravel()
+    return result
+
+  def evaluate_n_members(self, members, n_members, threshold):
+    # select a subset of members
+    subset = members[:n_members]
+    # make prediction
+    yhat = self.ensemble_predictions(subset, threshold)
+    # precision tp / (tp + fp)
+    precision = precision_score(self.y_test, yhat)
+    print('Precision ensemble: %f' % precision)
+    # recall: tp / (tp + fn)
+    recall = recall_score(self.y_test, yhat)
+    print('Recall ensemble : %f' % recall)
+    # f1: 2 tp / (2 tp + fp + fn)
+    f1 = f1_score(self.y_test, yhat)
+    print('F1 score ensemble: %f' % f1)
+    # calculate accuracy
+    return accuracy_score(self.y_test, yhat)
+
+  def horizontal_voting(self, n_epoch, n_save_after,threshold =0.5):
+    makedirs('models')
+    for i in range(n_epoch):
+      #fit the model for a single epoch
+      self.compiled_model.fit(self.X_train, self.y_train, epochs=1, verbose=0)
+      print('>>>>>>>>>>> fit no : '+str(i)+' done')
+      #check if we should save the model
+      if i >= n_save_after:
+        self.compiled_model.save('models/model_' + str(i) + '.h5')
+        print('>>>>>>>>>>>>>>>>>>>> save done')
+    members = list(reversed(self.load_all_models(n_start = n_save_after, n_end = n_epoch)))
+    # evaluate different numbers of ensembles on hold out set
+    single_scores, ensemble_scores = list(), list()
+    for i in range(1, len(members)+1):
+      # evaluate model with i members
+      ensemble_score = self.evaluate_n_members(members, i, threshold)
+      # evaluate the i'th model standalone
+      _, single_score = members[i-1].evaluate(self.X_test, self.y_test, verbose=0)
+      # summarize this step
+      print('> %d: single=%.3f, ensemble=%.3f' % (i, single_score, ensemble_score))
+      ensemble_scores.append(ensemble_score)
+      single_scores.append(single_score)
+    # summarize average accuracy of a single final model
+    print('Accuracy %.3f (%.3f)' % (np.mean(single_scores), np.std(single_scores)))
+    # plot score vs number of ensemble members
+    x_axis = [i for i in range(1, len(members)+1)]
+    plt.plot(x_axis, single_scores, marker='o', linestyle='None')
+    plt.plot(x_axis, ensemble_scores, marker='o')
+    plt.grid()
+    plt.legend(["Single scores", "Horizontal score"])
+    plt.show()
