@@ -351,7 +351,7 @@ class DeepLearningExplore:
     
   def get_best_trained(self, model, n_epoch, name="cv", verbose = True):
     checkpointer = ModelCheckpoint(
-      filepath="best_weights_"+name+"_.hdf5", 
+      filepath="best_model_"+name+"_.h5", 
       monitor = 'val_binary_accuracy',
       verbose=1, 
       save_best_only=True
@@ -365,7 +365,7 @@ class DeepLearningExplore:
       epochs = n_epoch,
       callbacks=[checkpointer],
     )
-    self.best_model = model.load_weights("best_weights_"+name+"_.hdf5")
+    self.best_model = load_model("best_model_"+name+"_.h5")
 
     if verbose:
       fig, ax = plt.subplots()
@@ -477,7 +477,7 @@ class DeepLearningExplore:
     # calculate accuracy
     return accuracy_score(self.y_test, yhat)
 
-  def horizontal_voting(self, n_epoch, n_save_after,threshold =0.5):
+  def horizontal_validate(self, n_epoch, n_save_after,threshold =0.5):
     makedirs('models')
     for i in range(n_epoch):
       #fit the model for a single epoch
@@ -507,4 +507,30 @@ class DeepLearningExplore:
     plt.plot(x_axis, ensemble_scores, marker='o')
     plt.grid()
     plt.legend(["Single scores", "Horizontal score"])
+    plt.show()
+
+  def horizontal_evaluate(self, test_X, test_y, n_epoch, n_save_after,threshold =0.5):
+    self.X_test = test_X
+    self.y_test = test_y
+    members = list(reversed(self.load_all_models(n_start = n_save_after, n_end = n_epoch)))
+    # evaluate different numbers of ensembles on hold out set
+    single_scores, ensemble_scores = list(), list()
+    for i in range(1, len(members)+1):
+      # evaluate model with i members
+      ensemble_score = self.evaluate_n_members(members, i, threshold)
+      # evaluate the i'th model standalone
+      _, single_score = members[i-1].evaluate(test_X, test_y, verbose=0)
+      # summarize this step
+      print('> %d: single=%.3f, ensemble=%.3f' % (i, single_score, ensemble_score))
+      ensemble_scores.append(ensemble_score)
+      single_scores.append(single_score)
+    # summarize average accuracy of a single final model
+    print('Accuracy %.3f (%.3f)' % (np.mean(single_scores), np.std(single_scores)))
+    # plot score vs number of ensemble members
+    x_axis = [i for i in range(1, len(members)+1)]
+    plt.plot(x_axis, single_scores, marker='o', linestyle='None')
+    plt.plot(x_axis, ensemble_scores, marker='o')
+    plt.grid()
+    plt.legend(["Single scores", "Horizontal score"])
+    plt.title("Accuracy for the test dataset")
     plt.show()
