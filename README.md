@@ -6,11 +6,11 @@ In this competition, we were challenged to build an algorithm that automatically
 However, we did this competition as part of our final year engineering studies at [INSA Lyon](https://www.insa-lyon.fr/) in the energy and environment department. 
 
 ### Our best results
-Given the distribution of the dataset, which quite an equal distribution for icebergs and ships, we have mainly used the **accuracy** as the fundamental metric (*we also used **f1** and **logloss** in some cases*).
+Given the distribution of the dataset, which is quite an equal distribution for icebergs and ships, we have mainly used the **accuracy** as the fundamental metric (*we also used **f1** and **logloss** in some cases*).
 
 Our best result is given by a multi-input hybrid ```TensorFlow``` model which combines both numerical and image data. The numerical data is the result of different data processing phases of the image using ```Scikit-image``` and ```OpenCV```. We obtain an accuracy of nearly **94 %** on the validation dataset.
 
-## Description of the repositery
+## Description of the repository
 The **data** folder gathers the training dataset which was load using ```Git LFS```. We have also stored there our best CNN and MLP-CNN models in the ```.h5``` format from ```TensorFlow```. 
 
 The ```data_visualisation``` notebook summarizes the different filters and denoising methods that we have used on the images and shows different images where we truly struggle to identify the object on them.
