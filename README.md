@@ -32,5 +32,3 @@ Contributions are very welcome! If you find a bug or some improvements, feel fre
 * **Taha BOUSSAID** - [tboussaid](https://github.com/tboussaid)
 * **Tianfang LI** - [alexleeltf](https://github.com/alexleeltf)
 * **Tristan PREVOST** - [Tristan-Prevost](https://github.com/Tristan-Prevost)
-
-(Note to contributors: Add yourself in alphabetical order)
