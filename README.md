@@ -17,7 +17,7 @@ The ```data_visualisation``` notebook summarizes the different filters and denoi
 
 The ```naive_method``` notebook was our first and baseline model where we simply used different classifiers on the raw data (i.e. image matrix) without any pre-processing. We however made several **cross-validation** and **grid-search** to optimize the *hyperparameters*. The best accuracy was about **80 %** using ```SVM``` classifier.
 
-The ```supervised_learning_final``` notebook compiles the different classifier results this time while using pre-processed data (denoised, ACP, statistic features, OpenCV features...). The best accuracy was about **87 %** using ```RandomForest``` classifier.
+The ```supervised_learning_final_all_features``` notebook compiles the different classifier results this time while using pre-processed data (denoised, ACP, statistic features, OpenCV features...). The best accuracy was about **87 %** using ```RandomForest``` classifier. Three other variants are also available for comparison with some slight differences in features and treatment(Rec_ratio,Pixel normalisation), thus some minuscule differences in perfomance are observed.
 
 The ```deeplearning_explore``` implements our first ```CNN``` networks using ```Keras``` *Sequential API*. Three different architectures and transferred learning using **ResNet50** pretrained base are implemented. The best accuracy was given by a horizontal voting method (*to minimize the variance effect due to the small training dataset*) and was about **92 %**.
 
